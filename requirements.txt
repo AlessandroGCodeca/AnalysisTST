@@ -1,0 +1,9 @@
+requests
+pandas
+matplotlib
+scipy
+seaborn
+streamlit
+yfinance
+statsmodels
+Pillow
