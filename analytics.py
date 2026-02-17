@@ -126,6 +126,49 @@ def breusch_pagan_test(df: pd.DataFrame, stats_dict: dict) -> dict:
     }
 
 
+# ── Multi-Asset Beta ───────────────────────────────────────────────────────
+
+def multi_asset_beta_matrix(
+    multi_df: pd.DataFrame, benchmark_col: str = "benchmark"
+) -> pd.DataFrame:
+    """
+    Compute beta for every asset column against the benchmark column.
+
+    Parameters
+    ----------
+    multi_df : DataFrame with one column per asset (returns) and one
+               benchmark column.
+    benchmark_col : name of the benchmark column.
+
+    Returns
+    -------
+    DataFrame with index=asset names, columns=[Beta, Alpha, R², Sharpe].
+    """
+    bench_ret = multi_df[benchmark_col]
+    results = []
+
+    for col in multi_df.columns:
+        if col == benchmark_col:
+            continue
+        asset_ret = multi_df[col].dropna()
+        common = asset_ret.index.intersection(bench_ret.dropna().index)
+        if len(common) < 10:
+            continue
+
+        slope, intercept, r_val, p_val, se = sp_stats.linregress(
+            bench_ret.loc[common], asset_ret.loc[common]
+        )
+        results.append({
+            "Asset": col.replace("-", " ").title(),
+            "Beta": round(slope, 4),
+            "Alpha": round(intercept, 6),
+            "R²": round(r_val ** 2, 4),
+            "Sharpe": round(sharpe_ratio(asset_ret.loc[common]), 2),
+        })
+
+    return pd.DataFrame(results).set_index("Asset").sort_values("Beta", ascending=False)
+
+
 # ── Summary builder ───────────────────────────────────────────────────────
 
 def compute_all_stats(df: pd.DataFrame, window: int = 30) -> dict:

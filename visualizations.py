@@ -229,3 +229,128 @@ def plot_correlation_heatmap(df: pd.DataFrame) -> plt.Figure:
     ax.set_title("Correlation Matrix", fontsize=14, fontweight="bold")
     fig.tight_layout()
     return fig
+
+
+# ── 8. Multi-Asset Beta Heatmap ───────────────────────────────────────────
+
+def plot_beta_heatmap(beta_matrix) -> plt.Figure:
+    """Heatmap of multi-asset betas (single-row heatmap or bar chart)."""
+    fig, ax = plt.subplots(figsize=(12, max(4, len(beta_matrix) * 0.45)))
+
+    betas = beta_matrix[["Beta"]].sort_values("Beta", ascending=True)
+
+    colors = [ACCENT_RED if b > 1 else ACCENT_GREEN if b < 0.5 else ASSET_COLOR
+              for b in betas["Beta"]]
+    bars = ax.barh(betas.index, betas["Beta"], color=colors, alpha=0.8, edgecolor="white")
+
+    ax.axvline(1.0, color="grey", linestyle="--", alpha=0.6, label="β = 1.0")
+    ax.set_xlabel("Beta", fontsize=12)
+    ax.set_title("Multi-Asset Beta vs Benchmark", fontsize=14, fontweight="bold")
+
+    # Annotate bars
+    for bar, val in zip(bars, betas["Beta"]):
+        ax.text(bar.get_width() + 0.02, bar.get_y() + bar.get_height() / 2,
+                f"{val:.3f}", va="center", fontsize=9)
+
+    ax.legend(fontsize=9)
+    fig.tight_layout()
+    return fig
+
+
+# ── 9. DCC-GARCH vs Rolling Beta ─────────────────────────────────────────
+
+def plot_dcc_vs_rolling(
+    dcc_beta: "pd.Series",
+    rolling_beta_series: "pd.Series",
+    window: int = 30,
+    asset_name: str = "BTC",
+    bench_name: str = "ETH",
+) -> plt.Figure:
+    """Compare DCC-GARCH beta with simple rolling beta."""
+    fig, ax = plt.subplots(figsize=(12, 5))
+
+    ax.plot(rolling_beta_series.index, rolling_beta_series.values,
+            color=BENCH_COLOR, linewidth=1.2, alpha=0.7,
+            label=f"{window}-day Rolling β")
+    ax.plot(dcc_beta.index, dcc_beta.values,
+            color=ACCENT_RED, linewidth=1.8,
+            label="DCC-GARCH β")
+    ax.axhline(1.0, color="grey", linestyle="--", alpha=0.5)
+
+    ax.set_xlabel("Date", fontsize=12)
+    ax.set_ylabel("Beta", fontsize=12)
+    ax.set_title(f"{asset_name}/{bench_name}  —  DCC-GARCH vs Rolling Beta",
+                 fontsize=14, fontweight="bold")
+    ax.legend(fontsize=10)
+    fig.tight_layout()
+    return fig
+
+
+# ── 10. Regime Chart ─────────────────────────────────────────────────────
+
+def plot_regime_chart(
+    df: pd.DataFrame,
+    regimes: "pd.Series",
+    asset_name: str = "BTC",
+) -> plt.Figure:
+    """Price chart with regime-coloured background bands."""
+    from regime import REGIME_COLORS
+
+    fig, ax = plt.subplots(figsize=(12, 5))
+
+    ax.plot(df.index, df["Asset_Price"], color=ASSET_COLOR, linewidth=1.5,
+            label=f"{asset_name} Price")
+
+    # Paint regime bands
+    prev_regime = None
+    band_start = None
+
+    for date, regime in regimes.items():
+        if regime != prev_regime:
+            if prev_regime is not None and band_start is not None:
+                ax.axvspan(band_start, date,
+                           alpha=0.15,
+                           color=REGIME_COLORS.get(prev_regime, "#888"),
+                           zorder=0)
+            band_start = date
+            prev_regime = regime
+
+    # Final band
+    if prev_regime is not None and band_start is not None:
+        ax.axvspan(band_start, df.index[-1],
+                   alpha=0.15,
+                   color=REGIME_COLORS.get(prev_regime, "#888"),
+                   zorder=0)
+
+    # Legend patches
+    from matplotlib.patches import Patch
+    patches = [Patch(facecolor=c, alpha=0.3, label=r)
+               for r, c in REGIME_COLORS.items()]
+    ax.legend(handles=patches, fontsize=9, loc="upper left")
+
+    ax.set_ylabel(f"{asset_name} Price (USD)", fontsize=12)
+    ax.set_title(f"{asset_name}  —  Price with Market Regimes",
+                 fontsize=14, fontweight="bold")
+    fig.tight_layout()
+    return fig
+
+
+# ── 11. Rolling Beta with Event Annotations ──────────────────────────────
+
+def plot_rolling_beta_with_events(
+    rolling_beta_series: "pd.Series",
+    events_df: "pd.DataFrame",
+    window: int = 30,
+    asset_name: str = "BTC",
+    bench_name: str = "ETH",
+) -> plt.Figure:
+    """Rolling beta chart with key event annotations."""
+    fig = plot_rolling_beta(rolling_beta_series, window, asset_name, bench_name)
+    ax = fig.axes[0]
+
+    from events import annotate_chart
+    annotate_chart(ax, events_df, ypos="top")
+
+    fig.tight_layout()
+    return fig
+

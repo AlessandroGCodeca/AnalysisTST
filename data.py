@@ -74,6 +74,63 @@ def fetch_coin_data(coin_id: str, vs_currency: str = "usd",
     return df
 
 
+def fetch_coin_data_hourly(coin_id: str, vs_currency: str = "usd",
+                           days: int = 90) -> pd.DataFrame:
+    """
+    Fetch hourly price data (CoinGecko gives hourly for days <= 90).
+    Returns DataFrame with DatetimeIndex and 'Price' column.
+    """
+    days = min(days, 90)  # CoinGecko limit for hourly
+    cache_key = f"coin_hourly_{coin_id}_{vs_currency}_{days}"
+    cp = _cache_path(cache_key)
+
+    if _cache_is_fresh(cp, max_age_hours=6):
+        return pd.read_csv(cp, index_col="Date", parse_dates=True)
+
+    url = (
+        f"https://api.coingecko.com/api/v3/coins/{coin_id}"
+        f"/market_chart?vs_currency={vs_currency}&days={days}"
+    )
+    session = _get_session()
+    resp = session.get(url, timeout=30)
+    resp.raise_for_status()
+    prices = resp.json()["prices"]
+
+    df = pd.DataFrame(prices, columns=["Date", "Price"])
+    df["Date"] = pd.to_datetime(df["Date"], unit="ms")
+    df.set_index("Date", inplace=True)
+
+    df.to_csv(cp)
+    return df
+
+
+def fetch_multi_assets(
+    coin_ids: list, vs_currency: str = "usd", days: int = 365
+) -> pd.DataFrame:
+    """
+    Fetch price data for multiple coins and merge into a single DataFrame.
+    Returns DataFrame with DatetimeIndex and one column per coin.
+    """
+    frames = []
+    for cid in coin_ids:
+        try:
+            cdf = fetch_coin_data(cid, vs_currency, days)
+            cdf.rename(columns={"Price": cid}, inplace=True)
+            cdf.index = cdf.index.normalize()
+            cdf = cdf[~cdf.index.duplicated(keep="first")]
+            frames.append(cdf)
+            time.sleep(1.2)  # rate-limit
+        except Exception as e:
+            print(f"⚠ Could not fetch {cid}: {e}")
+
+    if not frames:
+        raise RuntimeError("Failed to fetch any asset data.")
+
+    combined = pd.concat(frames, axis=1, sort=True)
+    combined.dropna(inplace=True)
+    return combined
+
+
 def fetch_total_market_cap(vs_currency: str = "usd",
                            days: int = 365) -> pd.DataFrame:
     """
@@ -175,6 +232,7 @@ def build_merged_df(
     benchmark_id: str = "ethereum",
     days: int = 365,
     freq: str = "daily",
+    granularity: str = "daily",
 ) -> pd.DataFrame:
     """
     Fetch asset + benchmark, merge, and compute returns.
@@ -192,7 +250,10 @@ def build_merged_df(
         Asset_Price, Benchmark_Price, Asset_Returns, Benchmark_Returns
     """
     # Fetch asset
-    asset_df = fetch_coin_data(asset_id, days=days)
+    if granularity == "hourly":
+        asset_df = fetch_coin_data_hourly(asset_id, days=min(days, 90))
+    else:
+        asset_df = fetch_coin_data(asset_id, days=days)
     asset_df.rename(columns={"Price": "Asset_Price"}, inplace=True)
 
     # Fetch benchmark
