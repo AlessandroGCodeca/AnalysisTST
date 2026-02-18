@@ -1,7 +1,10 @@
 __pycache__/
 *.pyc
 venv/
+.venv/
+.env
 cache/
 .snapshots/
+.pytest_cache/
 *.png
 *.webp

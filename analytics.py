@@ -169,6 +169,45 @@ def multi_asset_beta_matrix(
     return pd.DataFrame(results).set_index("Asset").sort_values("Beta", ascending=False)
 
 
+# ── CAPM Framework ─────────────────────────────────────────────────────────
+
+def treynor_ratio(
+    returns: pd.Series, beta: float,
+    risk_free_rate: float = 0.0, periods_per_year: int = 365,
+) -> float:
+    """
+    Treynor ratio: (Rp - Rf) / β.
+    Measures excess return per unit of systematic risk.
+    """
+    if beta == 0:
+        return 0.0
+    ann_return = returns.mean() * periods_per_year
+    return float((ann_return - risk_free_rate) / beta)
+
+
+def jensens_alpha(
+    asset_returns: pd.Series, benchmark_returns: pd.Series,
+    beta: float, risk_free_rate: float = 0.0, periods_per_year: int = 365,
+) -> float:
+    """
+    Jensen's alpha: α_J = Rp - [Rf + β·(Rm - Rf)].
+    Measures excess return beyond CAPM expectation.
+    """
+    rp = asset_returns.mean() * periods_per_year
+    rm = benchmark_returns.mean() * periods_per_year
+    expected = risk_free_rate + beta * (rm - risk_free_rate)
+    return float(rp - expected)
+
+
+def capm_expected_return(
+    beta: float, benchmark_returns: pd.Series,
+    risk_free_rate: float = 0.0, periods_per_year: int = 365,
+) -> float:
+    """CAPM expected return: E(Ri) = Rf + β·(E(Rm) - Rf)."""
+    rm = benchmark_returns.mean() * periods_per_year
+    return float(risk_free_rate + beta * (rm - risk_free_rate))
+
+
 # ── Summary builder ───────────────────────────────────────────────────────
 
 def compute_all_stats(df: pd.DataFrame, window: int = 30) -> dict:
@@ -180,17 +219,25 @@ def compute_all_stats(df: pd.DataFrame, window: int = 30) -> dict:
     roll = rolling_beta(df, window)
     bp = breusch_pagan_test(df, beta_stats)
 
+    beta_val = beta_stats["beta"]
+    asset_ret = df["Asset_Returns"]
+    bench_ret = df["Benchmark_Returns"]
+
     return {
         **beta_stats,
         "beta_ci_lower": ci_lo,
         "beta_ci_upper": ci_hi,
-        "asset_sharpe": sharpe_ratio(df["Asset_Returns"]),
-        "benchmark_sharpe": sharpe_ratio(df["Benchmark_Returns"]),
+        "asset_sharpe": sharpe_ratio(asset_ret),
+        "benchmark_sharpe": sharpe_ratio(bench_ret),
         "asset_max_dd": max_drawdown(df["Asset_Price"]),
         "benchmark_max_dd": max_drawdown(df["Benchmark_Price"]),
-        "asset_var_95": value_at_risk(df["Asset_Returns"], 0.95),
-        "asset_cvar_95": conditional_var(df["Asset_Returns"], 0.95),
-        "benchmark_var_95": value_at_risk(df["Benchmark_Returns"], 0.95),
+        "asset_var_95": value_at_risk(asset_ret, 0.95),
+        "asset_cvar_95": conditional_var(asset_ret, 0.95),
+        "benchmark_var_95": value_at_risk(bench_ret, 0.95),
         "breusch_pagan": bp,
         "rolling_beta": roll,
+        # CAPM
+        "treynor": treynor_ratio(asset_ret, beta_val),
+        "jensens_alpha": jensens_alpha(asset_ret, bench_ret, beta_val),
+        "capm_expected_return": capm_expected_return(beta_val, bench_ret),
     }

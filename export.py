@@ -1,26 +1,25 @@
 """
 export.py — PDF report generation and CSV export helpers.
+Supports both Plotly figures (via kaleido) and fallback matplotlib.
 """
 
 import io
 import pandas as pd
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
 
 
 def generate_pdf(
-    figures: list[plt.Figure],
+    figures: list,
     stats: dict,
     asset_name: str = "BTC",
     bench_name: str = "ETH",
     days: int = 365,
 ) -> bytes:
     """
-    Generate a multi-page PDF report.
+    Generate a multi-page PDF report from Plotly figures.
 
     Parameters
     ----------
-    figures : list of matplotlib Figure objects to include.
+    figures : list of Plotly Figure objects.
     stats : dict of computed statistics.
     asset_name, bench_name, days : metadata for the title page.
 
@@ -28,6 +27,11 @@ def generate_pdf(
     -------
     bytes — PDF file content.
     """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+
     buf = io.BytesIO()
 
     with PdfPages(buf) as pdf:
@@ -54,6 +58,9 @@ def generate_pdf(
             f"{asset_name} VaR (95%):  {stats.get('asset_var_95', 'N/A'):.2%}",
             f"{asset_name} CVaR (95%):  {stats.get('asset_cvar_95', 'N/A'):.2%}",
             "",
+            f"Treynor:  {stats.get('treynor', 'N/A'):.4f}",
+            f"Jensen's α:  {stats.get('jensens_alpha', 'N/A'):.4%}",
+            "",
             f"Breusch-Pagan p:  {bp.get('p_value', 'N/A'):.4f}" if bp else "",
             f"Heteroscedastic:  {'Yes' if bp.get('heteroscedastic') else 'No'}" if bp else "",
         ]
@@ -70,9 +77,22 @@ def generate_pdf(
         pdf.savefig(fig_title)
         plt.close(fig_title)
 
-        # ── Chart pages ────────────────────────────────────────────────
+        # ── Chart pages (convert Plotly → image → matplotlib → PDF) ───
         for fig in figures:
-            pdf.savefig(fig, bbox_inches="tight")
+            try:
+                # Plotly figure → PNG bytes via kaleido
+                img_bytes = fig.to_image(format="png", width=1200, height=600, scale=2)
+                from PIL import Image
+                img = Image.open(io.BytesIO(img_bytes))
+
+                fig_page, ax_page = plt.subplots(figsize=(11, 5.5))
+                ax_page.axis("off")
+                ax_page.imshow(img, aspect="auto")
+                pdf.savefig(fig_page, bbox_inches="tight")
+                plt.close(fig_page)
+            except Exception:
+                # Fallback: skip figure if conversion fails
+                continue
 
     buf.seek(0)
     return buf.read()

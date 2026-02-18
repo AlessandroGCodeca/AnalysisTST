@@ -1,5 +1,6 @@
 requests
 pandas
+numpy
 matplotlib
 scipy
 seaborn
@@ -9,3 +10,6 @@ statsmodels
 Pillow
 arch
 hmmlearn
+plotly
+kaleido
+PyWavelets

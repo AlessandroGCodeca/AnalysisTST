@@ -2,14 +2,21 @@
 backtest.py — Simple beta-hedging backtest engine.
 
 Computes hedged portfolio returns and performance statistics.
+All charts use Plotly for interactive visualization.
 """
 
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 from analytics import sharpe_ratio, max_drawdown, value_at_risk
+
+
+BG_DARK = "#0e1117"
+CARD_DARK = "#1a1d23"
+GRID_COLOR = "#2d3139"
+TEXT_COLOR = "#fafafa"
 
 
 def hedge_portfolio(
@@ -69,34 +76,71 @@ def plot_backtest(
     hedge_ratio: float,
     asset_name: str = "BTC",
     bench_name: str = "ETH",
-) -> plt.Figure:
-    """Plot cumulative returns: unhedged vs beta-hedged."""
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8), height_ratios=[3, 1])
+) -> go.Figure:
+    """Plot cumulative returns: unhedged vs beta-hedged (Plotly)."""
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        row_heights=[0.7, 0.3],
+        subplot_titles=[
+            f"Backtest: {asset_name} Unhedged vs Beta-Hedged ({bench_name})",
+            "Daily Hedged P&L",
+        ],
+        vertical_spacing=0.08,
+    )
 
     # ── Cumulative returns ─────────────────────────────────────────────
-    ax1.plot(bt_df.index, bt_df["Cum_Unhedged"] * 100,
-             color="#f7931a", linewidth=1.8, label=f"{asset_name} (Unhedged)")
-    ax1.plot(bt_df.index, bt_df["Cum_Hedged"] * 100,
-             color="#2ecc71", linewidth=1.8, label=f"Beta-Hedged (β={hedge_ratio:.2f})")
-    ax1.axhline(0, color="grey", linestyle="--", alpha=0.4)
-    ax1.fill_between(bt_df.index, bt_df["Cum_Hedged"] * 100, 0,
-                     where=bt_df["Cum_Hedged"] > 0,
-                     alpha=0.1, color="#2ecc71")
-    ax1.fill_between(bt_df.index, bt_df["Cum_Hedged"] * 100, 0,
-                     where=bt_df["Cum_Hedged"] <= 0,
-                     alpha=0.1, color="#e74c3c")
-    ax1.set_ylabel("Cumulative Return (%)", fontsize=12)
-    ax1.set_title(f"Backtest: {asset_name} Unhedged vs Beta-Hedged ({bench_name})",
-                  fontsize=14, fontweight="bold")
-    ax1.legend(fontsize=10)
-    ax1.grid(True, alpha=0.3)
+    fig.add_trace(go.Scatter(
+        x=bt_df.index, y=bt_df["Cum_Unhedged"] * 100,
+        mode="lines", line=dict(color="#f7931a", width=2),
+        name=f"{asset_name} (Unhedged)",
+        hovertemplate="%{x|%Y-%m-%d}<br>Return: %{y:.1f}%<extra></extra>",
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=bt_df.index, y=bt_df["Cum_Hedged"] * 100,
+        mode="lines", line=dict(color="#2ecc71", width=2),
+        name=f"Beta-Hedged (β={hedge_ratio:.2f})",
+        hovertemplate="%{x|%Y-%m-%d}<br>Return: %{y:.1f}%<extra></extra>",
+    ), row=1, col=1)
+
+    fig.add_hline(y=0, line_dash="dash", line_color="grey", opacity=0.4, row=1, col=1)
+
+    # Fill: green above 0, red below 0
+    fig.add_trace(go.Scatter(
+        x=bt_df.index, y=bt_df["Cum_Hedged"].clip(lower=0) * 100,
+        mode="lines", line=dict(width=0), showlegend=False,
+        fill="tozeroy", fillcolor="rgba(46,204,113,0.1)",
+    ), row=1, col=1)
+
+    fig.add_trace(go.Scatter(
+        x=bt_df.index, y=bt_df["Cum_Hedged"].clip(upper=0) * 100,
+        mode="lines", line=dict(width=0), showlegend=False,
+        fill="tozeroy", fillcolor="rgba(231,76,60,0.1)",
+    ), row=1, col=1)
 
     # ── Daily hedge P&L ────────────────────────────────────────────────
-    colors = ["#2ecc71" if x > 0 else "#e74c3c" for x in bt_df["Hedged"]]
-    ax2.bar(bt_df.index, bt_df["Hedged"] * 100, color=colors, alpha=0.6, width=1.0)
-    ax2.set_ylabel("Daily Hedged Return (%)", fontsize=10)
-    ax2.set_xlabel("Date", fontsize=12)
-    ax2.grid(True, alpha=0.3)
+    colors = ["#2ecc71" if v > 0 else "#e74c3c" for v in bt_df["Hedged"]]
 
-    fig.tight_layout()
+    fig.add_trace(go.Bar(
+        x=bt_df.index, y=bt_df["Hedged"] * 100,
+        marker_color=colors, opacity=0.6,
+        name="Daily Hedged Return",
+        hovertemplate="%{x|%Y-%m-%d}<br>Return: %{y:.2f}%<extra></extra>",
+    ), row=2, col=1)
+
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor=BG_DARK,
+        plot_bgcolor=CARD_DARK,
+        font=dict(color=TEXT_COLOR, family="Inter, sans-serif"),
+        margin=dict(l=60, r=30, t=50, b=40),
+        height=550,
+        showlegend=True,
+        legend=dict(x=0.01, y=0.99, bgcolor="rgba(0,0,0,0)"),
+    )
+
+    fig.update_yaxes(title_text="Cumulative Return (%)", gridcolor=GRID_COLOR, row=1, col=1)
+    fig.update_yaxes(title_text="Daily Return (%)", gridcolor=GRID_COLOR, row=2, col=1)
+    fig.update_xaxes(gridcolor=GRID_COLOR)
+
     return fig
